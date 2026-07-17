@@ -1,0 +1,26 @@
+# terraform.tfvars.example — committed template of human-set inputs for
+# terraform/stack. Copy to terraform.tfvars (gitignored) only if you need
+# to override defaults.
+#
+# NOTE: the three session-specific values below are normally NOT set here.
+# deploy.ps1 discovers them every sandbox session and writes them into
+# .session/session.auto.tfvars (gitignored), passed to Terraform via
+# -var-file. Set them here only for a manual run without the scripts.
+
+# --- Per-session inputs (machine-generated in normal operation) ---
+subscription_id     = "00000000-0000-0000-0000-000000000000" # sandbox subscription id (az account show)
+resource_group_name = "1-xxxxxxxx-playground-sandbox"        # pre-created playground resource group
+deployer_ip         = "203.0.113.10"                         # public IP of the deploying machine (KV/SQL/Storage firewalls)
+
+# --- Feature flags ---
+enable_application_insights = true  # off-switch if a sandbox session denies App Insights
+enable_sql_private_endpoint = false # optional Private Link experiment; attempt only after a green baseline
+enable_app_identity         = false # sandbox denies managed identities; flag preserves the upgrade path
+
+# --- Sizing / operational knobs (safe defaults live in variables.tf) ---
+# location            = "eastus"
+# image_tag           = "v1"
+# app_service_sku     = "B1"
+# sql_database_sku    = "Basic"
+# file_share_quota_gb = 100
+# log_retention_days  = 30

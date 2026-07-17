@@ -1,0 +1,68 @@
+# Static checks for the Terraform code: fmt, validate, tflint, checkov.
+# Zero cloud credentials: init runs with -backend=false, no Azure login.
+# Steps run in order and fail fast on the first non-zero exit.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  static-checks:
+    name: L0 static checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # Step 1: formatting drift
+      - name: terraform fmt
+        run: terraform fmt -check -recursive terraform/
+
+      # Step 2: structural errors (both root modules, backend skipped)
+      - name: terraform validate (bootstrap)
+        run: |
+          terraform -chdir=terraform/bootstrap init -backend=false -input=false
+          terraform -chdir=terraform/bootstrap validate
+
+      - name: terraform validate (stack)
+        run: |
+          terraform -chdir=terraform/stack init -backend=false -input=false
+          terraform -chdir=terraform/stack validate
+
+      # Step 3: provider-aware lint
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          # Pinned deliberately: current "latest" tflint panics (nil pointer in
+          # sigstore attestation verification) while installing the azurerm
+          # ruleset during --init. v0.53.0 verifies plugins via the classic PGP
+          # path and is compatible with ruleset 0.27.0. Revisit the pin later.
+          tflint_version: v0.53.0
+
+      - name: tflint
+        env:
+          # GitHub-provided token only; used by tflint --init to download the
+          # azurerm ruleset from GitHub releases without rate limiting.
+          # This is not a cloud credential.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          TFLINT_CONFIG="$(pwd)/.tflint.hcl"
+          tflint --init --config "$TFLINT_CONFIG"
+          tflint --chdir=terraform/bootstrap --config "$TFLINT_CONFIG"
+          tflint --chdir=terraform/stack --config "$TFLINT_CONFIG"
+
+      # Step 4: security misconfigurations; in-code #checkov:skip annotations
+      # justify each setting the sandbox environment forces
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: checkov
+        run: |
+          pip install checkov
+          checkov -d terraform --quiet

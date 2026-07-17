@@ -1,0 +1,34 @@
+# The .gitignore is a security control: nothing session-specific,
+# state-bearing, or secret-adjacent may ever reach the repository.
+
+# Per-session generated artifacts: real backend config, per-session tfvars,
+# bootstrap local state. Machine-generated, session-scoped, secret-adjacent.
+.session/
+
+# Terraform state contains every resource attribute in cleartext,
+# including the SQL admin password and access keys.
+*.tfstate
+*.tfstate.*
+
+# Real variable files may hold environment-specific values;
+# only the committed *.example templates are allowed through.
+*.tfvars
+!*.example
+
+# The real backend config belongs in .session/; this catches a stray copy.
+backend.hcl
+!backend.hcl.example
+
+# Local Terraform working directory: provider binaries and cache.
+.terraform/
+
+# Terraform crash logs can embed state fragments and environment values.
+crash.log
+crash.*.log
+
+# Saved plan files can embed sensitive values.
+tfplan
+*.tfplan
+
+# Editor/tool workspace configs.
+.obsidian/
