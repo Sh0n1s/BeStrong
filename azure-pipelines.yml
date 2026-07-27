@@ -59,6 +59,32 @@ stages:
               echo "agent egress IP: ${AGENT_IP}; image tag: ${BUILD_SOURCEVERSION:0:7}"
             displayName: Discover agent IP and image tag
 
+          # Hosted agents get a fresh egress IP every run, but the existing
+          # Key Vault / Storage firewalls still allowlist the PREVIOUS run's
+          # IP - and terraform must READ their data planes during refresh
+          # before it can update the rules. Pre-authorize this run's IP via
+          # the control plane (not blocked by data-plane firewalls);
+          # terraform apply then reconciles the rules to the canonical state.
+          - task: AzureCLI@2
+            displayName: Pre-authorize agent IP on existing firewalls
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -uo pipefail
+                RG="$(workloadResourceGroup)"
+                KV=$(az keyvault list -g "$RG" --query "[0].name" -o tsv 2>/dev/null || true)
+                if [ -n "$KV" ]; then
+                  az keyvault network-rule add --name "$KV" --ip-address "$(agentIp)" -o none || true
+                  echo "KV $KV: agent IP added"
+                fi
+                SA=$(az storage account list -g "$RG" --query "[?starts_with(name, 'stbestrong')].name | [0]" -o tsv 2>/dev/null || true)
+                if [ -n "$SA" ]; then
+                  az storage account network-rule add -g "$RG" -n "$SA" --ip-address "$(agentIp)" -o none || true
+                  echo "Storage $SA: agent IP added"
+                fi
+                sleep 20  # give the firewall changes a moment to propagate
           - task: TerraformTaskV4@4
             displayName: terraform init
             inputs:
@@ -117,6 +143,32 @@ stages:
               echo "agent egress IP: ${AGENT_IP}; image tag: ${BUILD_SOURCEVERSION:0:7}"
             displayName: Discover agent IP and image tag
 
+          # Hosted agents get a fresh egress IP every run, but the existing
+          # Key Vault / Storage firewalls still allowlist the PREVIOUS run's
+          # IP - and terraform must READ their data planes during refresh
+          # before it can update the rules. Pre-authorize this run's IP via
+          # the control plane (not blocked by data-plane firewalls);
+          # terraform apply then reconciles the rules to the canonical state.
+          - task: AzureCLI@2
+            displayName: Pre-authorize agent IP on existing firewalls
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -uo pipefail
+                RG="$(workloadResourceGroup)"
+                KV=$(az keyvault list -g "$RG" --query "[0].name" -o tsv 2>/dev/null || true)
+                if [ -n "$KV" ]; then
+                  az keyvault network-rule add --name "$KV" --ip-address "$(agentIp)" -o none || true
+                  echo "KV $KV: agent IP added"
+                fi
+                SA=$(az storage account list -g "$RG" --query "[?starts_with(name, 'stbestrong')].name | [0]" -o tsv 2>/dev/null || true)
+                if [ -n "$SA" ]; then
+                  az storage account network-rule add -g "$RG" -n "$SA" --ip-address "$(agentIp)" -o none || true
+                  echo "Storage $SA: agent IP added"
+                fi
+                sleep 20  # give the firewall changes a moment to propagate
           - task: TerraformTaskV4@4
             displayName: terraform init
             inputs:
