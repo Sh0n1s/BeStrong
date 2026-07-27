@@ -91,11 +91,14 @@ stages:
                 -var=image_tag=$(shortSha)
 
   # ------------------------------------------------------------- main deploy
+  # dependsOn: [] is load-bearing: without it Deploy implicitly depends on the
+  # Validate stage, and on non-PR runs Validate is SKIPPED - which makes a
+  # dependent stage skip too. Deploy must evaluate its condition independently.
   - stage: Deploy
     displayName: "main: init + validate + apply + image"
+    dependsOn: []
     condition: >-
-      and(succeeded(),
-          ne(variables['Build.Reason'], 'PullRequest'),
+      and(ne(variables['Build.Reason'], 'PullRequest'),
           eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - job: apply
