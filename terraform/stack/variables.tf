@@ -19,8 +19,8 @@ variable "deployer_ip" {
 
 variable "location" {
   type        = string
-  description = "Azure region for all resources."
-  default     = "eastus"
+  description = "Azure region for all resources. centralus: empirically verified to allow both B1 App Service plans and SQL server provisioning on a free-trial subscription (eastus denies both - SQL ProvisioningDisabled + zero Basic VM quota)."
+  default     = "centralus"
 }
 
 variable "image_tag" {

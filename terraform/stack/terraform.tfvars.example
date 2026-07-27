@@ -1,4 +1,4 @@
-# terraform.tfvars.example — committed template of human-set inputs for
+﻿# terraform.tfvars.example — committed template of human-set inputs for
 # terraform/stack. Copy to terraform.tfvars (gitignored) only if you need
 # to override defaults.
 #
@@ -17,7 +17,7 @@ enable_sql_private_endpoint = false # optional Private Link demo for SQL
 enable_app_identity         = false # legacy-off default; safe to enable in a personal subscription
 
 # --- Sizing / operational knobs (safe defaults live in variables.tf) ---
-# location            = "eastus"
+# location            = "centralus"
 # image_tag           = "v1"
 # app_service_sku     = "B1"
 # sql_database_sku    = "Basic"
