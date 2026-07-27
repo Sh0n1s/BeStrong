@@ -155,3 +155,5 @@ The hosted agent's egress IP is discovered on every run and passed as
 `-var deployer_ip`, so the Key Vault / SQL / Storage firewalls admit the agent
 for exactly that run. GitHub Actions (`ci.yml`) keeps running the credential-free
 static checks on every push independently of Azure DevOps.
+
+> Trunk-based flow: every pull request to `main` gets an automatic `terraform plan` check from Azure Pipelines; merging to `main` deploys automatically.
