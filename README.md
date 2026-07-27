@@ -50,7 +50,7 @@ workflow and remain useful as a local manual path.
 ## Quickstart
 
 ```powershell
-az login                  # sign in as the sandbox user
+az login                  # sign in to the target subscription
 .\scripts\deploy.ps1      # provision everything, ~20-30 minutes total
 .\scripts\test.ps1        # run the acceptance suite
 .\scripts\destroy.ps1     # tear everything down
@@ -75,11 +75,13 @@ az login                  # sign in as the sandbox user
 
 ## Configuration
 
-The three per-session inputs — `subscription_id`, `resource_group_name`,
-`deployer_ip` — have no defaults on purpose. `deploy.ps1` discovers them live
-and writes them to `.session/session.auto.tfvars` (git-ignored), together with
-`.session/backend.hcl` for the remote-state backend. You never edit these by
-hand; `terraform/stack/terraform.tfvars.example` documents the shape.
+Only `deployer_ip` has no default — it is supplied per run (your workstation's
+public IP locally, the hosted agent's IP in CI). `subscription_id` falls back
+to `ARM_SUBSCRIPTION_ID`, and `resource_group_name` defaults to
+`rg-bestrong-dev` (created by the stack). The legacy sandbox scripts still
+generate `.session/session.auto.tfvars` + `.session/backend.hcl` (git-ignored)
+for the manual path; `terraform/stack/terraform.tfvars.example` documents the
+shape.
 
 Feature flags (`terraform/stack/variables.tf`):
 
@@ -94,19 +96,20 @@ passes the git short SHA automatically (fallback `v1`). Sizing knobs
 (`app_service_sku`, `sql_database_sku`, `location`, quotas, log retention)
 all have sandbox-safe defaults.
 
-## Sandbox constraints and design choices
+## Sandbox heritage: constraints that shaped the design
 
-The Pluralsight sandbox imposes hard limits; the design embraces them rather
-than fighting them:
+The project was born inside the Pluralsight sandbox, and several of its hard
+limits still explain the design (kept deliberately — they are sound,
+conservative choices in any subscription):
 
-| Constraint | Resulting design |
+| Original constraint | Design it produced (current state) |
 |---|---|
-| Resource group is pre-created and platform-owned | Consumed via a `data` source, never created or deleted |
-| No managed identities, role assignments, or service principals | ACR admin credentials for image pull/push; SQL authentication with a generated password stored in Key Vault |
+| Resource group was pre-created and platform-owned | Now that the target is a personal subscription, the stack creates `rg-bestrong-dev` itself; the bootstrap creates `rg-bestrong-tfstate` |
+| No managed identities, role assignments, or service principals | ACR admin credentials for image pull/push; SQL authentication with a generated password stored in Key Vault (`enable_app_identity` is the documented upgrade flag) |
 | ACR capped at Basic SKU | Public registry endpoint; protection is authentication only (verified by a negative probe) |
-| 4-hour session TTL | Everything is re-runnable from zero; Terraform state lives inside the sandbox and dies with it |
+| 4-hour session TTL | Everything is re-runnable from zero; state now lives in the long-lived `rg-bestrong-tfstate` backend |
 | SKU and region allowlists | B1 App Service plan, Basic SQL DTU, `eastus` default region |
-| Network baseline | Service endpoints + strict default-Deny PaaS firewalls (deployer IP + app subnet only); the flag-gated SQL private endpoint proves Private Link also works |
+| Network baseline | Service endpoints + strict default-Deny PaaS firewalls (per-run allowed IP + app subnet only); the flag-gated SQL private endpoint proves Private Link also works |
 
 ## Security notes
 
