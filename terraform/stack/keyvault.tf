@@ -9,7 +9,7 @@ resource "azurerm_key_vault" "main" {
   #checkov:skip=CKV_AZURE_189:Public network access stays enabled but default-Deny firewalled to the deployer IP
   #checkov:skip=CKV2_AZURE_32:No private endpoints in this stack - service endpoints + PaaS firewalls instead
   name                       = local.key_vault_name
-  resource_group_name        = data.azurerm_resource_group.playground.name
+  resource_group_name        = azurerm_resource_group.main.name
   location                   = var.location
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"

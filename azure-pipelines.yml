@@ -1,0 +1,178 @@
+# CI/CD for the BeStrong infrastructure - trunk-based flow:
+#   pull request to main -> Validate stage: terraform init + validate + plan (nothing applied)
+#   push to main         -> Deploy stage:   terraform init + validate + apply,
+#                           then build & push the sample image and smoke-check /health.
+#
+# One-time Azure DevOps prerequisites (see README, section "CI/CD"):
+#   - GitHub service connection (pipeline access to this repository)
+#   - Azure Resource Manager service connection named 'bestrong-azure'
+#     (classic service principal, Contributor on the target subscription)
+#   - "Terraform" marketplace extension by Microsoft DevLabs
+#     (provides the TerraformInstaller@1 / TerraformTaskV4@4 tasks)
+#   - pipeline variable 'backendStorageAccount': name of the bootstrap-created
+#     state storage account (sttfstate<suffix>, from terraform/bootstrap outputs)
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  terraformVersion: "1.15.5"
+  azureServiceConnection: "bestrong-azure"
+  backendResourceGroup: "rg-bestrong-tfstate"
+  backendContainer: "tfstate"
+  backendKey: "bestrong/dev/terraform.tfstate"
+  stackDir: "$(Build.SourcesDirectory)/terraform/stack"
+  workloadResourceGroup: "rg-bestrong-dev"
+
+stages:
+  # ---------------------------------------------------------------- PR checks
+  - stage: Validate
+    displayName: "PR: init + validate + plan"
+    condition: eq(variables['Build.Reason'], 'PullRequest')
+    jobs:
+      - job: plan
+        displayName: terraform plan
+        steps:
+          - task: TerraformInstaller@1
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(terraformVersion)
+
+          # The hosted agent's egress IP changes every run; the KV/SQL/Storage
+          # firewalls allowlist it via -var deployer_ip. The image tag follows
+          # the commit being built so the plan reflects the real rollout.
+          - bash: |
+              set -euo pipefail
+              AGENT_IP=$(curl -s https://api.ipify.org)
+              echo "##vso[task.setvariable variable=agentIp]${AGENT_IP}"
+              echo "##vso[task.setvariable variable=shortSha]${BUILD_SOURCEVERSION:0:7}"
+              echo "agent egress IP: ${AGENT_IP}; image tag: ${BUILD_SOURCEVERSION:0:7}"
+            displayName: Discover agent IP and image tag
+
+          - task: TerraformTaskV4@4
+            displayName: terraform init
+            inputs:
+              provider: azurerm
+              command: init
+              workingDirectory: $(stackDir)
+              backendServiceArm: $(azureServiceConnection)
+              backendAzureRmResourceGroupName: $(backendResourceGroup)
+              backendAzureRmStorageAccountName: $(backendStorageAccount)
+              backendAzureRmContainerName: $(backendContainer)
+              backendAzureRmKey: $(backendKey)
+
+          - task: TerraformTaskV4@4
+            displayName: terraform validate
+            inputs:
+              provider: azurerm
+              command: validate
+              workingDirectory: $(stackDir)
+
+          - task: TerraformTaskV4@4
+            displayName: terraform plan
+            inputs:
+              provider: azurerm
+              command: plan
+              workingDirectory: $(stackDir)
+              environmentServiceNameAzureRM: $(azureServiceConnection)
+              commandOptions: >-
+                -input=false
+                -var=deployer_ip=$(agentIp)
+                -var=image_tag=$(shortSha)
+
+  # ------------------------------------------------------------- main deploy
+  - stage: Deploy
+    displayName: "main: init + validate + apply + image"
+    condition: >-
+      and(succeeded(),
+          ne(variables['Build.Reason'], 'PullRequest'),
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: apply
+        displayName: terraform apply + sample image
+        steps:
+          - task: TerraformInstaller@1
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(terraformVersion)
+
+          - bash: |
+              set -euo pipefail
+              AGENT_IP=$(curl -s https://api.ipify.org)
+              echo "##vso[task.setvariable variable=agentIp]${AGENT_IP}"
+              echo "##vso[task.setvariable variable=shortSha]${BUILD_SOURCEVERSION:0:7}"
+              echo "agent egress IP: ${AGENT_IP}; image tag: ${BUILD_SOURCEVERSION:0:7}"
+            displayName: Discover agent IP and image tag
+
+          - task: TerraformTaskV4@4
+            displayName: terraform init
+            inputs:
+              provider: azurerm
+              command: init
+              workingDirectory: $(stackDir)
+              backendServiceArm: $(azureServiceConnection)
+              backendAzureRmResourceGroupName: $(backendResourceGroup)
+              backendAzureRmStorageAccountName: $(backendStorageAccount)
+              backendAzureRmContainerName: $(backendContainer)
+              backendAzureRmKey: $(backendKey)
+
+          - task: TerraformTaskV4@4
+            displayName: terraform validate
+            inputs:
+              provider: azurerm
+              command: validate
+              workingDirectory: $(stackDir)
+
+          - task: TerraformTaskV4@4
+            displayName: terraform apply
+            inputs:
+              provider: azurerm
+              command: apply
+              workingDirectory: $(stackDir)
+              environmentServiceNameAzureRM: $(azureServiceConnection)
+              commandOptions: >-
+                -input=false
+                -auto-approve
+                -var=deployer_ip=$(agentIp)
+                -var=image_tag=$(shortSha)
+
+          # Beyond the assignment scope, deliberately: without an image in ACR
+          # the Web App has nothing to run. Build the sample container, push it
+          # with the tag terraform just wired into the app, and smoke-check.
+          - task: AzureCLI@2
+            displayName: Build and push sample image, smoke-check /health
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                RG="$(workloadResourceGroup)"
+                ACR_NAME=$(az acr list -g "$RG" --query "[0].name" -o tsv)
+                LOGIN_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)
+                APP_NAME=$(az webapp list -g "$RG" --query "[0].name" -o tsv)
+
+                az acr login --name "$ACR_NAME"
+                docker build -t "$LOGIN_SERVER/bestrong-sample:$(shortSha)" "$(Build.SourcesDirectory)/app"
+                docker push "$LOGIN_SERVER/bestrong-sample:$(shortSha)"
+                az webapp restart -g "$RG" -n "$APP_NAME"
+
+                echo "Waiting for /health on https://${APP_NAME}.azurewebsites.net ..."
+                for i in $(seq 1 40); do
+                  BODY=$(curl -s -o /tmp/health.json -w "%{http_code}" "https://${APP_NAME}.azurewebsites.net/health" || true)
+                  if [ "$BODY" = "200" ] && grep -q '"status":"ok"' /tmp/health.json; then
+                    echo "Smoke check passed:"; cat /tmp/health.json; exit 0
+                  fi
+                  echo "  not healthy yet (HTTP ${BODY}); retry ${i}/40 in 15s"; sleep 15
+                done
+                echo "Smoke check FAILED"; cat /tmp/health.json || true; exit 1

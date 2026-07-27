@@ -3,7 +3,7 @@
 
 resource "azurerm_log_analytics_workspace" "main" {
   name                = local.log_analytics_name
-  resource_group_name = data.azurerm_resource_group.playground.name
+  resource_group_name = azurerm_resource_group.main.name
   location            = var.location
   sku                 = "PerGB2018"
   retention_in_days   = var.log_retention_days
@@ -16,7 +16,7 @@ resource "azurerm_application_insights" "main" {
   count = var.enable_application_insights ? 1 : 0
 
   name                = local.application_insights_name
-  resource_group_name = data.azurerm_resource_group.playground.name
+  resource_group_name = azurerm_resource_group.main.name
   location            = var.location
   workspace_id        = azurerm_log_analytics_workspace.main.id
   application_type    = "web"

@@ -8,7 +8,7 @@ resource "azurerm_service_plan" "main" {
   #checkov:skip=CKV_AZURE_212:Single throwaway instance; failover capacity is pointless in a 4-hour sandbox
   #checkov:skip=CKV_AZURE_225:Zone redundancy requires Premium, outside the sandbox SKU allowlist
   name                = local.app_service_plan_name
-  resource_group_name = data.azurerm_resource_group.playground.name
+  resource_group_name = azurerm_resource_group.main.name
   location            = var.location
   os_type             = "Linux"
   sku_name            = var.app_service_sku
@@ -21,7 +21,7 @@ resource "azurerm_linux_web_app" "main" {
   #checkov:skip=CKV_AZURE_17:Client certificates would break the public /health smoke test
   #checkov:skip=CKV_AZURE_222:Public HTTPS inbound is the intended ingress for this app
   name                      = local.web_app_name
-  resource_group_name       = data.azurerm_resource_group.playground.name
+  resource_group_name       = azurerm_resource_group.main.name
   location                  = var.location
   service_plan_id           = azurerm_service_plan.main.id
   https_only                = true

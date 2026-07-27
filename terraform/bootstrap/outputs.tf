@@ -2,7 +2,7 @@
 
 output "state_resource_group_name" {
   description = "Resource group that hosts the Terraform state storage account."
-  value       = data.azurerm_resource_group.playground.name
+  value       = azurerm_resource_group.state.name
 }
 
 output "state_storage_account_name" {
