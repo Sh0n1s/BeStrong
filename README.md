@@ -142,6 +142,9 @@ One-time setup in Azure DevOps (org `BeStrongTest`, project `BeStrong`):
 
 1. Run `terraform/bootstrap` once locally (creates `rg-bestrong-tfstate` + the
    state storage account; note the `state_storage_account_name` output).
+   The bootstrap keeps its own state locally in
+   `terraform/bootstrap/terraform.tfstate` (git-ignored) - back this file up;
+   if lost, re-adopt the resources with `terraform import` rather than re-apply.
 2. Install the free **Terraform** marketplace extension (Microsoft DevLabs).
 3. Create a **GitHub** service connection (grants pipeline access to this repo).
 4. Create an **Azure Resource Manager** service connection named
