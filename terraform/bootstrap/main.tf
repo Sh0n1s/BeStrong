@@ -20,11 +20,10 @@ terraform {
   backend "local" {}
 }
 
-# Provider config mirrors terraform/stack. resource_provider_registrations = "none":
-# the sandbox subscription denies resource-provider registration.
+# Provider config mirrors terraform/stack. Default resource-provider
+# registration stays on (fresh subscriptions have most providers unregistered).
 provider "azurerm" {
-  subscription_id                 = var.subscription_id
-  resource_provider_registrations = "none"
+  subscription_id = var.subscription_id
 
   features {}
 }
@@ -37,13 +36,16 @@ locals {
   }
 }
 
-# Pre-created playground RG — consumed, never created. Resources use
-# var.location, not the RG's location: the sandbox allows only specific regions.
-data "azurerm_resource_group" "playground" {
-  name = var.resource_group_name
+# Dedicated long-lived resource group for remote state: state now outlives any
+# single deployment of the workload stack.
+resource "azurerm_resource_group" "state" {
+  name     = var.resource_group_name
+  location = var.location
+  tags     = local.tags
 }
 
-# Per-session suffix for the globally unique state storage account name.
+# Suffix for the globally unique state storage account name. Generated once;
+# the bootstrap state (and therefore the name) is long-lived.
 resource "random_string" "suffix" {
   length  = 6
   upper   = false
@@ -51,16 +53,16 @@ resource "random_string" "suffix" {
 }
 
 resource "azurerm_storage_account" "tfstate" {
-  #checkov:skip=CKV_AZURE_35:State must stay reachable from the deployer workstation over the public endpoint; the account dies with the 4-hour sandbox session
-  #checkov:skip=CKV_AZURE_59:Public endpoint access is the only workable state path here; the sandbox setup uses no private endpoints
+  #checkov:skip=CKV_AZURE_35:State must be reachable from hosted CI agents and the workstation over the public endpoint; access is key-authenticated
+  #checkov:skip=CKV_AZURE_59:Public endpoint access is the working state path for this learning project; no private endpoints in scope
   #checkov:skip=CKV_AZURE_33:State blobs only; no queue service in use
-  #checkov:skip=CKV_AZURE_206:Standard LRS; state is throwaway with the 4-hour sandbox session
-  #checkov:skip=CKV2_AZURE_1:Customer-managed keys need Key Vault key access via managed-identity plumbing the sandbox denies
-  #checkov:skip=CKV2_AZURE_33:No private endpoints in this sandbox setup
-  #checkov:skip=CKV2_AZURE_40:Shared-key auth via ARM_ACCESS_KEY is the only backend auth that works without role assignments, which the sandbox denies
-  #checkov:skip=CKV2_AZURE_41:No SAS tokens issued; the account lives at most 4 hours
+  #checkov:skip=CKV_AZURE_206:Standard LRS is sufficient durability for a learning project's state
+  #checkov:skip=CKV2_AZURE_1:Platform-managed encryption is sufficient here; no CMK requirement
+  #checkov:skip=CKV2_AZURE_33:No private endpoints in scope for the state backend
+  #checkov:skip=CKV2_AZURE_40:Backend auth uses storage keys retrieved through ARM by the pipeline backend config; Entra data-plane auth is a noted future hardening
+  #checkov:skip=CKV2_AZURE_41:No SAS tokens issued
   name                = "sttfstate${random_string.suffix.result}"
-  resource_group_name = data.azurerm_resource_group.playground.name
+  resource_group_name = azurerm_resource_group.state.name
   location            = var.location
 
   account_kind             = "StorageV2"
@@ -71,8 +73,7 @@ resource "azurerm_storage_account" "tfstate" {
   min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
 
-  # Soft delete for the state blob: 7 days is capped by the session anyway,
-  # but it protects against an accidental delete WITHIN a session.
+  # Soft delete protects the state blob against accidental deletion.
   blob_properties {
     delete_retention_policy {
       days = 7

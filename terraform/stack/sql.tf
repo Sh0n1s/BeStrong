@@ -21,7 +21,7 @@ resource "azurerm_mssql_server" "main" {
   #checkov:skip=CKV2_AZURE_27:Entra ID (Azure AD) authentication cannot be configured in the sandbox
   #checkov:skip=CKV_AZURE_24:Auditing itself is skipped (see CKV_AZURE_23), so its 90-day retention requirement is moot in a 4-hour sandbox
   name                          = local.sql_server_name
-  resource_group_name           = data.azurerm_resource_group.playground.name
+  resource_group_name           = azurerm_resource_group.main.name
   location                      = var.location
   version                       = "12.0"
   minimum_tls_version           = "1.2"
@@ -65,7 +65,7 @@ resource "azurerm_private_dns_zone" "sql" {
   count = var.enable_sql_private_endpoint ? 1 : 0
 
   name                = "privatelink.database.windows.net"
-  resource_group_name = data.azurerm_resource_group.playground.name
+  resource_group_name = azurerm_resource_group.main.name
   tags                = local.tags
 }
 
@@ -73,7 +73,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "sql" {
   count = var.enable_sql_private_endpoint ? 1 : 0
 
   name                  = "pdnsz-link-sql-bestrong-dev"
-  resource_group_name   = data.azurerm_resource_group.playground.name
+  resource_group_name   = azurerm_resource_group.main.name
   private_dns_zone_name = azurerm_private_dns_zone.sql[0].name
   virtual_network_id    = azurerm_virtual_network.main.id
   tags                  = local.tags
@@ -83,7 +83,7 @@ resource "azurerm_private_endpoint" "sql" {
   count = var.enable_sql_private_endpoint ? 1 : 0
 
   name                = "pe-sql-bestrong-dev"
-  resource_group_name = data.azurerm_resource_group.playground.name
+  resource_group_name = azurerm_resource_group.main.name
   location            = var.location
   subnet_id           = azurerm_subnet.private_endpoints.id
   tags                = local.tags

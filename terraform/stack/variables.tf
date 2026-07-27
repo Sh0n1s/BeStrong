@@ -1,30 +1,31 @@
-# Input variables. Session-specific inputs have NO defaults - they arrive via
-# the machine-generated .session/session.auto.tfvars written by deploy.ps1.
+# Input variables.
 
 variable "subscription_id" {
   type        = string
-  description = "Sandbox subscription ID for the current session (per-session, discovered by deploy.ps1)."
+  description = "Azure subscription id. Leave null to fall back to the ARM_SUBSCRIPTION_ID environment variable (how the CI pipeline supplies it via the service connection)."
+  default     = null
 }
 
 variable "resource_group_name" {
   type        = string
-  description = "Name of the pre-created playground resource group (per-session, pattern 1-xxxxxxxx-playground-sandbox). Consumed, never created."
+  description = "Name of the resource group the stack creates for all workload resources."
+  default     = "rg-bestrong-dev"
 }
 
 variable "deployer_ip" {
   type        = string
-  description = "Public IP of the deployer workstation (per-session). Allowlisted in the Key Vault, SQL, and Storage firewalls."
+  description = "Public IP allowed through the Key Vault, SQL, and Storage firewalls: the deployer workstation locally, or the hosted agent's IP in CI (discovered per run)."
 }
 
 variable "location" {
   type        = string
-  description = "Azure region for all resources. Default is the safest sandbox-allowlisted region; the playground RG location is intentionally NOT used."
+  description = "Azure region for all resources."
   default     = "eastus"
 }
 
 variable "image_tag" {
   type        = string
-  description = "Tag of the bestrong-sample container image the Web App pulls from ACR. deploy.ps1 passes the git short SHA."
+  description = "Tag of the bestrong-sample container image the Web App pulls from ACR. CI passes the git short SHA of the build."
   default     = "v1"
 }
 
@@ -42,7 +43,7 @@ variable "enable_sql_private_endpoint" {
 
 variable "enable_app_identity" {
   type        = bool
-  description = "Add a system-assigned managed identity to the Web App. Off: the sandbox does not support managed identities."
+  description = "Add a system-assigned managed identity to the Web App. Off by default (a legacy of the original sandbox target); safe to enable in a personal subscription."
   default     = false
 }
 

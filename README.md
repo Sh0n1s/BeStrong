@@ -3,10 +3,12 @@
 Terraform-defined Azure infrastructure for the containerized BeStrong backend:
 an App Service (Linux container), Azure Container Registry, Key Vault, Azure
 SQL, an Azure Files share mounted as a folder, a VNet with service endpoints,
-Log Analytics + Application Insights, and remote Terraform state. The whole
-environment is designed to deploy end-to-end inside a Pluralsight Azure cloud
-sandbox at $0 out-of-pocket; it works in any Azure subscription with minor
-adjustments (mainly the resource-group discovery in `scripts/deploy.ps1`).
+Log Analytics + Application Insights, and remote Terraform state. The stack
+creates its own resource group and deploys to any Azure subscription; changes
+ship through a trunk-based Azure DevOps pipeline (see **CI/CD** below).
+The project originally targeted the Pluralsight Azure cloud sandbox — the
+PowerShell lifecycle scripts in `scripts/` still implement that per-session
+workflow and remain useful as a local manual path.
 
 ## Repository structure
 
@@ -30,8 +32,9 @@ adjustments (mainly the resource-group discovery in `scripts/deploy.ps1`).
 │   ├── deploy.ps1          # Full provisioning lifecycle, zero to running app
 │   ├── test.ps1            # 24-check acceptance suite
 │   └── destroy.ps1         # Teardown + local cleanup
-└── .github/workflows/
-    └── ci.yml              # Static checks: fmt, validate, tflint, checkov
+├── .github/workflows/
+│   └── ci.yml              # Static checks: fmt, validate, tflint, checkov
+└── azure-pipelines.yml     # Azure DevOps CI/CD: PR -> plan, main -> apply + image
 ```
 
 ## Prerequisites
@@ -47,7 +50,7 @@ adjustments (mainly the resource-group discovery in `scripts/deploy.ps1`).
 ## Quickstart
 
 ```powershell
-az login                  # sign in as the sandbox user
+az login                  # sign in to the target subscription
 .\scripts\deploy.ps1      # provision everything, ~20-30 minutes total
 .\scripts\test.ps1        # run the acceptance suite
 .\scripts\destroy.ps1     # tear everything down
@@ -72,11 +75,13 @@ az login                  # sign in as the sandbox user
 
 ## Configuration
 
-The three per-session inputs — `subscription_id`, `resource_group_name`,
-`deployer_ip` — have no defaults on purpose. `deploy.ps1` discovers them live
-and writes them to `.session/session.auto.tfvars` (git-ignored), together with
-`.session/backend.hcl` for the remote-state backend. You never edit these by
-hand; `terraform/stack/terraform.tfvars.example` documents the shape.
+Only `deployer_ip` has no default — it is supplied per run (your workstation's
+public IP locally, the hosted agent's IP in CI). `subscription_id` falls back
+to `ARM_SUBSCRIPTION_ID`, and `resource_group_name` defaults to
+`rg-bestrong-dev` (created by the stack). The legacy sandbox scripts still
+generate `.session/session.auto.tfvars` + `.session/backend.hcl` (git-ignored)
+for the manual path; `terraform/stack/terraform.tfvars.example` documents the
+shape.
 
 Feature flags (`terraform/stack/variables.tf`):
 
@@ -91,19 +96,20 @@ passes the git short SHA automatically (fallback `v1`). Sizing knobs
 (`app_service_sku`, `sql_database_sku`, `location`, quotas, log retention)
 all have sandbox-safe defaults.
 
-## Sandbox constraints and design choices
+## Sandbox heritage: constraints that shaped the design
 
-The Pluralsight sandbox imposes hard limits; the design embraces them rather
-than fighting them:
+The project was born inside the Pluralsight sandbox, and several of its hard
+limits still explain the design (kept deliberately — they are sound,
+conservative choices in any subscription):
 
-| Constraint | Resulting design |
+| Original constraint | Design it produced (current state) |
 |---|---|
-| Resource group is pre-created and platform-owned | Consumed via a `data` source, never created or deleted |
-| No managed identities, role assignments, or service principals | ACR admin credentials for image pull/push; SQL authentication with a generated password stored in Key Vault |
+| Resource group was pre-created and platform-owned | Now that the target is a personal subscription, the stack creates `rg-bestrong-dev` itself; the bootstrap creates `rg-bestrong-tfstate` |
+| No managed identities, role assignments, or service principals | ACR admin credentials for image pull/push; SQL authentication with a generated password stored in Key Vault (`enable_app_identity` is the documented upgrade flag) |
 | ACR capped at Basic SKU | Public registry endpoint; protection is authentication only (verified by a negative probe) |
-| 4-hour session TTL | Everything is re-runnable from zero; Terraform state lives inside the sandbox and dies with it |
+| 4-hour session TTL | Everything is re-runnable from zero; state now lives in the long-lived `rg-bestrong-tfstate` backend |
 | SKU and region allowlists | B1 App Service plan, Basic SQL DTU, `eastus` default region |
-| Network baseline | Service endpoints + strict default-Deny PaaS firewalls (deployer IP + app subnet only); the flag-gated SQL private endpoint proves Private Link also works |
+| Network baseline | Service endpoints + strict default-Deny PaaS firewalls (per-run allowed IP + app subnet only); the flag-gated SQL private endpoint proves Private Link also works |
 
 ## Security notes
 
@@ -122,3 +128,30 @@ than fighting them:
 - CI runs with zero cloud credentials: `terraform fmt` / `validate`
   (`-backend=false`), tflint with the azurerm ruleset, and checkov, with
   every accepted deviation annotated inline in the Terraform code.
+
+## CI/CD (Azure DevOps)
+
+Trunk-based flow driven by `azure-pipelines.yml`:
+
+| Event | Stage | Steps |
+|---|---|---|
+| Pull request to `main` | Validate | `terraform init` -> `validate` -> `plan` (nothing applied) |
+| Push / merge to `main` | Deploy | `terraform init` -> `validate` -> `apply`, then build & push the sample image (tag = commit short SHA) and smoke-check `/health` |
+
+One-time setup in Azure DevOps (org `BeStrongTest`, project `BeStrong`):
+
+1. Run `terraform/bootstrap` once locally (creates `rg-bestrong-tfstate` + the
+   state storage account; note the `state_storage_account_name` output).
+2. Install the free **Terraform** marketplace extension (Microsoft DevLabs).
+3. Create a **GitHub** service connection (grants pipeline access to this repo).
+4. Create an **Azure Resource Manager** service connection named
+   `bestrong-azure`: classic service principal
+   (`az ad sp create-for-rbac --role Contributor --scopes /subscriptions/<id>`),
+   entered manually - no secrets ever live in this repository.
+5. Create the pipeline from the existing `azure-pipelines.yml` and set the
+   pipeline variable `backendStorageAccount` to the bootstrap output from step 1.
+
+The hosted agent's egress IP is discovered on every run and passed as
+`-var deployer_ip`, so the Key Vault / SQL / Storage firewalls admit the agent
+for exactly that run. GitHub Actions (`ci.yml`) keeps running the credential-free
+static checks on every push independently of Azure DevOps.

@@ -1,10 +1,13 @@
-# Shared foundation: playground RG data source, random suffix, naming locals,
+# Shared foundation: the stack's resource group, random suffix, naming locals,
 # standard tags.
 
-# The pre-created playground RG is consumed, never created. Every resource
-# still uses var.location, NOT the RG's location (sandbox region allowlist).
-data "azurerm_resource_group" "playground" {
-  name = var.resource_group_name
+# The stack owns and creates its resource group. (Earlier revisions targeted a
+# Pluralsight sandbox where the RG was pre-created and consumed via a data
+# source; the project now deploys to a personal Azure subscription.)
+resource "azurerm_resource_group" "main" {
+  name     = var.resource_group_name
+  location = var.location
+  tags     = local.tags
 }
 
 # 6-char suffix, lower + numeric only; applied only where Azure requires

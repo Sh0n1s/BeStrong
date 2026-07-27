@@ -1,16 +1,18 @@
-# Provider configuration. Auth context: plain `az login` with the sandbox
-# user credentials - no service principal exists in the sandbox.
+# Provider configuration. Auth: locally via `az login`; in CI via the Azure
+# service connection (service principal) exported as ARM_* environment
+# variables by the pipeline tasks.
 
 provider "azurerm" {
   subscription_id = var.subscription_id
 
-  # The sandbox denies resource-provider registration writes.
-  resource_provider_registrations = "none"
+  # Default resource-provider registration stays ON: a fresh personal
+  # subscription has most providers unregistered, and the first apply
+  # registers what it needs (one-time, adds a few minutes).
 
   features {
     key_vault {
-      # The sandbox may deny purge operations; the per-session random name
-      # suffix avoids soft-deleted name collisions instead.
+      # Purge-on-destroy stays off; the random name suffix avoids
+      # soft-deleted vault name collisions between deployments.
       purge_soft_delete_on_destroy = false
     }
   }

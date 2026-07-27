@@ -10,7 +10,7 @@ resource "azurerm_storage_account" "main" {
   #checkov:skip=CKV2_AZURE_40:The App Service Azure Files mount can only authenticate by account key (platform limitation)
   #checkov:skip=CKV2_AZURE_41:No SAS tokens issued; the account lives at most 4 hours
   name                            = local.storage_account_name
-  resource_group_name             = data.azurerm_resource_group.playground.name
+  resource_group_name             = azurerm_resource_group.main.name
   location                        = var.location
   account_kind                    = "StorageV2"
   account_tier                    = "Standard"

@@ -14,7 +14,7 @@ resource "azurerm_container_registry" "main" {
   #checkov:skip=CKV_AZURE_237:Dedicated data endpoints require the Premium SKU, unavailable in the sandbox
   #checkov:skip=CKV_AZURE_163:Image vulnerability scanning requires a subscription-level, billed Microsoft Defender plan, unavailable in the sandbox
   name                = local.acr_name
-  resource_group_name = data.azurerm_resource_group.playground.name
+  resource_group_name = azurerm_resource_group.main.name
   location            = var.location
   sku                 = "Basic"
   admin_enabled       = true

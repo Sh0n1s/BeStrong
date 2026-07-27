@@ -1,11 +1,13 @@
 variable "subscription_id" {
   type        = string
-  description = "Azure subscription id of the current sandbox session (from .session/session.auto.tfvars)."
+  description = "Azure subscription id. Leave null to fall back to the ARM_SUBSCRIPTION_ID environment variable."
+  default     = null
 }
 
 variable "resource_group_name" {
   type        = string
-  description = "Name of the pre-created playground resource group that hosts the state storage account."
+  description = "Name of the dedicated resource group the bootstrap creates for the remote-state storage."
+  default     = "rg-bestrong-tfstate"
 }
 
 # Declared but unused here — mirrors session.auto.tfvars so the shared
@@ -18,6 +20,6 @@ variable "deployer_ip" {
 
 variable "location" {
   type        = string
-  description = "Azure region for the state storage account; must be a sandbox-allowlisted region."
+  description = "Azure region for the state resource group and storage account."
   default     = "eastus"
 }
